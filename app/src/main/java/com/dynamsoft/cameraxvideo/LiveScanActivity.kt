@@ -20,10 +20,11 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.LifecycleOwner
-import com.dynamsoft.dbr.BarcodeReader
+import com.dynamsoft.core.basic_structures.EnumImagePixelFormat
+import com.dynamsoft.core.basic_structures.ImageData
+import com.dynamsoft.cvr.CaptureVisionRouter
+import com.dynamsoft.cvr.EnumPresetTemplate
 import com.dynamsoft.dbr.EnumBarcodeFormat
-import com.dynamsoft.dbr.EnumImagePixelFormat
-import com.dynamsoft.dbr.EnumPresetTemplate
 import com.google.zxing.*
 import com.google.zxing.common.HybridBinarizer
 import java.math.RoundingMode
@@ -35,7 +36,7 @@ import kotlin.concurrent.timerTask
 
 class LiveScanActivity : AppCompatActivity() {
     private val executor = Executors.newSingleThreadExecutor()
-    private lateinit var reader: BarcodeReader
+    private lateinit var cvr: CaptureVisionRouter
     private lateinit var resultTextView:TextView
     private lateinit var previewView:PreviewView
     private lateinit var previewImageView:ImageView
@@ -82,11 +83,18 @@ class LiveScanActivity : AppCompatActivity() {
     }
 
     private fun initDBR(){
-        reader = BarcodeReader()
-        reader.updateRuntimeSettings(EnumPresetTemplate.VIDEO_SINGLE_BARCODE)
-        val settings = reader.runtimeSettings
-        settings.barcodeFormatIds = EnumBarcodeFormat.BF_EAN_13 or EnumBarcodeFormat.BF_QR_CODE
-        reader.updateRuntimeSettings(settings)
+        cvr = CaptureVisionRouter(this)
+        try {
+            val settings = cvr.getSimplifiedSettings(EnumPresetTemplate.PT_READ_BARCODES_SPEED_FIRST)
+            val barcodeSettings = settings.barcodeSettings
+            if (barcodeSettings != null) {
+                barcodeSettings.barcodeFormatIds = EnumBarcodeFormat.BF_EAN_13 or EnumBarcodeFormat.BF_QR_CODE
+                barcodeSettings.expectedBarcodesCount = 1
+            }
+            cvr.updateSettings(EnumPresetTemplate.PT_READ_BARCODES_SPEED_FIRST, settings)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun updateResult(){
@@ -213,9 +221,16 @@ class LiveScanActivity : AppCompatActivity() {
         buffer.get(bytes)
         var startTime = System.currentTimeMillis()
         if (SDK == "DBR") {
-            val results = reader.decodeBuffer(bytes,image.width,image.height,nRowStride*nPixelStride,EnumImagePixelFormat.IPF_NV21)
-            if (results.size>0) {
-                lastBarcodeResult = results[0].barcodeText
+            val imageData = ImageData()
+            imageData.bytes = bytes
+            imageData.width = image.width
+            imageData.height = image.height
+            imageData.stride = nRowStride * nPixelStride
+            imageData.format = EnumImagePixelFormat.IPF_NV21
+            val capturedResult = cvr.capture(imageData, EnumPresetTemplate.PT_READ_BARCODES_SPEED_FIRST)
+            val barcodesResult = capturedResult?.decodedBarcodesResult
+            if (barcodesResult != null && barcodesResult.items != null && barcodesResult.items.isNotEmpty()) {
+                lastBarcodeResult = barcodesResult.items[0].text
                 framesProcessedWithBarcodeFound++
                 if (firstBarcodeFoundTime == (-1).toLong() ) {
                     firstBarcodeFoundTime = elapsedTime

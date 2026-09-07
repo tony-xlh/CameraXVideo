@@ -18,9 +18,9 @@ import android.view.View
 import android.widget.*
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import com.dynamsoft.dbr.BarcodeReader
+import com.dynamsoft.cvr.CaptureVisionRouter
+import com.dynamsoft.cvr.EnumPresetTemplate
 import com.dynamsoft.dbr.EnumBarcodeFormat
-import com.dynamsoft.dbr.EnumPresetTemplate
 import com.google.zxing.*
 import com.google.zxing.common.HybridBinarizer
 import kotlinx.serialization.encodeToString
@@ -40,7 +40,7 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var imageView: ImageView
     private lateinit var videoView: VideoView
     private lateinit var resultTextView: TextView
-    private lateinit var reader: BarcodeReader
+    private lateinit var cvr: CaptureVisionRouter
     private val zxingReader = MultiFormatReader().apply {
         val map = mapOf(
             DecodeHintType.POSSIBLE_FORMATS to arrayListOf(BarcodeFormat.QR_CODE,BarcodeFormat.EAN_13)
@@ -141,21 +141,31 @@ class VideoActivity : AppCompatActivity() {
     }
 
     private fun initDBR(){
-        reader = BarcodeReader()
-        reader.updateRuntimeSettings(EnumPresetTemplate.VIDEO_SINGLE_BARCODE)
-        val settings = reader.runtimeSettings
-        settings.barcodeFormatIds = EnumBarcodeFormat.BF_EAN_13 or EnumBarcodeFormat.BF_QR_CODE
-        reader.updateRuntimeSettings(settings)
+        cvr = CaptureVisionRouter(this)
+        try {
+            val settings = cvr.getSimplifiedSettings(EnumPresetTemplate.PT_READ_BARCODES)
+            val barcodeSettings = settings.barcodeSettings
+            if (barcodeSettings != null) {
+                barcodeSettings.barcodeFormatIds = EnumBarcodeFormat.BF_EAN_13 or EnumBarcodeFormat.BF_QR_CODE
+                barcodeSettings.expectedBarcodesCount = 1
+            }
+            cvr.updateSettings(EnumPresetTemplate.PT_READ_BARCODES, settings)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun decodeBitmap(bm:Bitmap,selectedPosition:Int):ArrayList<String> {
         val results:ArrayList<String> = ArrayList<String>()
         val selectedItem = sdkList[selectedPosition]
         if (selectedItem == "DBR") {
-            val textResults = reader.decodeBufferedImage(bm)
-            for (tr in textResults) {
-                results.add(tr.barcodeText)
-                Log.d("DBR","confidence: "+tr.results[0].confidence)
+            val capturedResult = cvr.capture(bm, EnumPresetTemplate.PT_READ_BARCODES)
+            val barcodesResult = capturedResult?.decodedBarcodesResult
+            if (barcodesResult != null && barcodesResult.items != null) {
+                for (item in barcodesResult.items) {
+                    results.add(item.text)
+                    Log.d("DBR","confidence: "+item.confidence)
+                }
             }
         }else{
             val multiFormatReader = zxingReader
